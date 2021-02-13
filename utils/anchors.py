@@ -4,7 +4,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 
-
 class Anchors(nn.Module):
     def __init__(self, anchor_scale=4., pyramid_levels=[3, 4, 5, 6, 7]):
         super().__init__()

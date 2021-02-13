@@ -52,8 +52,8 @@ class mAP_EfficientDet(EfficientDet):
     #   检测图片
     #---------------------------------------------------#
     def detect_image(self,image_id,image):
-        self.confidence = 0.35
-        self.iou = 0.35
+        self.confidence = 0.1
+        self.iou = 0.1
         #f = open("./input/detection-results/"+image_id+".txt","a") 
         image_shape = np.array(np.shape(image)[0:2])
         #---------------------------------------------------------#
@@ -72,7 +72,7 @@ class mAP_EfficientDet(EfficientDet):
             #   传入网络当中进行预测
             #---------------------------------------------------------#
             _, regression, classification, anchors = self.net(images)
-            print(len(classification))
+            #print(len(classification))
             #-----------------------------------------------------------#
             #   将预测结果进行解码
             #-----------------------------------------------------------#
@@ -89,7 +89,7 @@ class mAP_EfficientDet(EfficientDet):
             except:
                 return 
             
-            print(len(batch_detections))    
+            #print(len(batch_detections))    
             #-----------------------------------------------------------#
             #   筛选出其中得分高于confidence的框 
             #-----------------------------------------------------------#

@@ -15,10 +15,26 @@ from utils.utils import (bbox_iou, decodebox, efficientdet_correct_boxes,
 
 image_sizes = [512, 640, 768, 896, 1024, 1280, 1408, 1536]
 
+def compute(img):
+
+    R_mean = np.mean(img[:,:,0])
+    G_mean = np.mean(img[:,:,1])
+    B_mean = np.mean(img[:,:,2])
+
+    R_std = np.std(img[:,:,0])
+    G_std = np.std(img[:,:,1])
+    B_std = np.std(img[:,:,2])
+
+    mean = (R_mean, G_mean, B_mean)
+    std = (R_std, G_std, B_std)
+
+    return mean, std
+
 def preprocess_input(image):
     image /= 255
-    mean=(0.406, 0.456, 0.485)
-    std=(0.225, 0.224, 0.229)
+    mean, std = compute(image)
+    #mean=(0.406, 0.456, 0.485)
+    #std=(0.225, 0.224, 0.229)
     image -= mean
     image /= std
     return image
@@ -32,11 +48,11 @@ def preprocess_input(image):
 class EfficientDet(object):
     _defaults = {
         #"model_path"    : 'model_data/efficientdet-d0.pth',
-        "model_path"    : 'logs/last.pth',
+        "model_path"    : './logs/last.pth',
         "classes_path"  : 'model_data/classes.txt',
         "phi"           : 0,
-        "confidence"    : 0.25,
-        "iou"           : 0.25,
+        "confidence"    : 0.15,
+        "iou"           : 0.15,
         "cuda"          : True
     }
 

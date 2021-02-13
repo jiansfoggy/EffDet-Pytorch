@@ -340,11 +340,7 @@ class BiFPN(nn.Module):
 
             p7_out = self.conv7_down(self.swish(p7_in + self.p7_downsample(p6_out)))
 
-
-
-
         return p3_out, p4_out, p5_out, p6_out, p7_out
-
 
 class BoxNet(nn.Module):
     def __init__(self, in_channels, num_anchors, num_layers, onnx_export=False):
@@ -380,7 +376,6 @@ class BoxNet(nn.Module):
         feats = torch.cat(feats, dim=1)
 
         return feats
-
 
 class ClassNet(nn.Module):
     def __init__(self, in_channels, num_anchors, num_classes, num_layers, onnx_export=False):
@@ -461,7 +456,7 @@ class EfficientNet(nn.Module):
 
 
 class EfficientDetBackbone(nn.Module):
-    def __init__(self, num_classes=80, phi=0, load_weights=False):
+    def __init__(self, num_classes=1, phi=0, load_weights=False):
         super(EfficientDetBackbone, self).__init__()
         #--------------------------------#
         #   phi指的是efficientdet的版本

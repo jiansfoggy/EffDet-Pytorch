@@ -168,7 +168,6 @@ def bbox_iou(box1, box2, x1y1x2y2=True):
 
     return iou
 
-
 def non_max_suppression(prediction, num_classes, conf_thres=0.5, nms_thres=0.4):
 
     output = [None for _ in range(len(prediction))]

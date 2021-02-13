@@ -11,11 +11,24 @@ from torch.autograd import Variable
 from torch.utils.data import DataLoader
 from torch.utils.data.dataset import Dataset
 
+def compute(img):
+    R_mean = np.mean(img[:,:,0])   
+    G_mean = np.mean(img[:,:,1])
+    B_mean = np.mean(img[:,:,2])
+    R_std = np.std(img[:,:,0])
+    G_std = np.std(img[:,:,1])
+    B_std = np.std(img[:,:,2])
+    mean = (R_mean, G_mean, B_mean)
+    std = (R_std, G_std, B_std)
+
+    return mean, std
 
 def preprocess_input(image):
     image /= 255
-    mean=(0.406, 0.456, 0.485)
-    std=(0.225, 0.224, 0.229)
+    mean, std = compute(image)
+    #print(mean,std)
+    #mean=(0.406, 0.456, 0.485)
+    #std=(0.225, 0.224, 0.229)
     image -= mean
     image /= std
     return image

@@ -27,6 +27,7 @@ def get_lr(optimizer):
 #---------------------------------------------------#
 #   获得类
 #---------------------------------------------------#
+
 def get_classes(classes_path):
     '''loads the classes'''
     with open(classes_path) as f:
@@ -213,7 +214,7 @@ if __name__ == "__main__":
         #   BATCH_SIZE不要太小，不然训练效果很差
         #--------------------------------------------#
         lr = 1e-3
-        Batch_size = 12
+        Batch_size = 16
         Init_Epoch = 0
         Freeze_Epoch = 30
         
@@ -246,7 +247,7 @@ if __name__ == "__main__":
         #--------------------------------------------#
         #   BATCH_SIZE不要太小，不然训练效果很差
         #--------------------------------------------#
-        lr = 1e-4
+        lr = 1e-6
         Batch_size = 8
         Freeze_Epoch = 30
         Unfreeze_Epoch = 80

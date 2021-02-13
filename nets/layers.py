@@ -191,7 +191,7 @@ class BlockDecoder(object):
 
 
 def efficientnet(width_coefficient=None, depth_coefficient=None, dropout_rate=0.2,
-                 drop_connect_rate=0.2, image_size=None, num_classes=1000):
+                 drop_connect_rate=0.2, image_size=None, num_classes=1):
     """ Creates a efficientnet model. """
 
     blocks_args = [

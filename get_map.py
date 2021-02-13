@@ -386,7 +386,7 @@ for txt_file in ground_truth_files_list:
     #    error_msg += "(You can avoid this error message by running extra/intersect-gt-and-dr.py)"
         #error(error_msg)
         #print(error_msg)
-    print(os.path.exists(temp_path))
+    #print(os.path.exists(temp_path))
     if os.path.exists(temp_path):
         lines_list = file_lines_to_list(txt_file)
         # create ground-truth dictionary
@@ -394,7 +394,8 @@ for txt_file in ground_truth_files_list:
         is_difficult = False
         already_seen_classes = []
         for line in lines_list:
-            class_name, left, top, right, bottom, width, height = line.split(" ")
+            class_name, left, top, right, bottom = line.split(" ")
+            #class_name, left, top, right, bottom, width, height = line.split(" ")
             """
             try:
                 if "difficult" in line:
