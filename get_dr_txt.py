@@ -52,8 +52,8 @@ class mAP_EfficientDet(EfficientDet):
     #   检测图片
     #---------------------------------------------------#
     def detect_image(self,image_id,image):
-        self.confidence = 0.1
-        self.iou = 0.1
+        self.confidence = 0.01
+        self.iou = 0.01
         #f = open("./input/detection-results/"+image_id+".txt","a") 
         image_shape = np.array(np.shape(image)[0:2])
         #---------------------------------------------------------#

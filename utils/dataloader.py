@@ -3,7 +3,7 @@ from random import shuffle
 
 import cv2
 import numpy as np
-import torch
+import torch, random
 import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
@@ -34,7 +34,7 @@ def preprocess_input(image):
     return image
 
 class EfficientdetDataset(Dataset):
-    def __init__(self, train_lines, image_size, is_train, hyp=None, rect=False, image_weights=False):
+    def __init__(self, train_lines, image_size, is_train, hyp=None, batch_size=16, rect=False, image_weights=False):
         super(EfficientdetDataset, self).__init__()
 
         self.train_lines = train_lines
@@ -48,7 +48,7 @@ class EfficientdetDataset(Dataset):
         self.rect = False if image_weights else rect
         self.mosaic = self.augment and not self.rect  # load 4 images at a time into a mosaic (only during training)
         self.mosaic_border = [-image_size[0]//2, -image_size[1]//2]
-
+        self.batch_size = batch_size
     def __len__(self):
         return self.train_batches
 
@@ -170,9 +170,95 @@ class EfficientdetDataset(Dataset):
             box_data[:len(box)] = box
 
         return image_data, box_data
+    """
+    # Ancillary functions --------------------------------------------------------------------------------------------------
+    def load_image(self, img_lst_path):
+        # loads 1 image from dataset, returns img, original hw, resized hw
+        
+        img = cv2.imread(img_lst_path)  # BGR
+        assert img is not None, 'Image Not Found ' + img_lst_path
+        h0, w0 = img.shape[:2]  # orig hw
+        r = self.image_size[0] / max(h0, w0)  # resize image to img_size
+        if r != 1:  # always resize down, only resize up if training with augmentation
+            interp = cv2.INTER_AREA if r < 1 and not self.augment else cv2.INTER_LINEAR
+            img = cv2.resize(img, (int(w0 * r), int(h0 * r)), interpolation=interp)
+        return img, (h0, w0), img.shape[:2]  # img, hw_original, hw_resized
 
+    def load_mosaic(self, index):
+        # loads images in a 4-mosaic
+        img_lst_path = self.img_files[index]
+        lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
+
+        labels4 = []
+        s = self.image_size[0]
+        yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
+        indices = [index] + [self.indices[random.randint(0, self.n - 1)] for _ in range(3)]  # 3 additional image indices
+        for i, index in enumerate(indices):
+            # Load image
+            img, _, (h, w) = load_image(self, img_lst_path)
+
+            # place img in img4
+            if i == 0:  # top left
+                img4 = np.full((s * 2, s * 2, img.shape[2]), 114, dtype=np.uint8)  # base image with 4 tiles
+                x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
+                x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
+            elif i == 1:  # top right
+                x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
+                x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
+            elif i == 2:  # bottom left
+                x1a, y1a, x2a, y2a = max(xc - w, 0), yc, xc, min(s * 2, yc + h)
+                x1b, y1b, x2b, y2b = w - (x2a - x1a), 0, w, min(y2a - y1a, h)
+            elif i == 3:  # bottom right
+                x1a, y1a, x2a, y2a = xc, yc, min(xc + w, s * 2), min(s * 2, yc + h)
+                x1b, y1b, x2b, y2b = 0, 0, min(w, x2a - x1a), min(y2a - y1a, h)
+
+            img4[y1a:y2a, x1a:x2a] = img[y1b:y2b, x1b:x2b]  # img4[ymin:ymax, xmin:xmax]
+            padw = x1a - x1b
+            padh = y1a - y1b
+
+            # Labels
+            #img_lst_path = self.train_lines[index]
+            #lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
+            #x = self.labels[index]
+            with open(lbl_lst_path,'r') as f:
+                Bboxes = f.read().strip().splitlines()
+                x = np.array([list(map(float,Bboxes[i].split(" "))) for i in range(len(Bboxes))])
+            
+            labels = x.copy()
+            if x.size > 0:  # Normalized xywh to pixel xyxy format
+                labels[:, 1] = w * (x[:, 1] - x[:, 3] / 2) + padw
+                labels[:, 2] = h * (x[:, 2] - x[:, 4] / 2) + padh
+                labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + padw
+                labels[:, 4] = h * (x[:, 2] + x[:, 4] / 2) + padh
+            labels4.append(labels)
+
+        # Concat/clip labels
+        if len(labels4):
+            labels4 = np.concatenate(labels4, 0)
+            np.clip(labels4[:, 1:], 0, 2 * s, out=labels4[:, 1:])  # use with random_perspective
+            # img4, labels4 = replicate(img4, labels4)  # replicate
+
+        # Augment
+        img4, labels4 = random_perspective(img4, labels4,
+                                           degrees=self.hyp['degrees'],
+                                           translate=self.hyp['translate'],
+                                           scale=self.hyp['scale'],
+                                           shear=self.hyp['shear'],
+                                           perspective=self.hyp['perspective'],
+                                           border=self.mosaic_border)  # border to remove
+
+        return img4, labels4
+    """
     def __getitem__(self, index):
         #index = index % self.train_batches
+        n = len(self.train_lines)  # number of images
+        bi = np.floor(np.arange(n) / self.batch_size).astype(np.int)  # batch index
+        nb = bi[-1] + 1  # number of batches
+        self.batch = bi  # batch index of image
+        self.n = n
+        self.indices = range(n)
+        self.batch_shapes = self.image_size
+
         img_lst_path = self.train_lines[index]
         lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
         #img, y = self.get_random_data(img_lst_path, lbl_lst_path, self.image_size[0:2], random=self.is_train)
@@ -193,10 +279,10 @@ class EfficientdetDataset(Dataset):
 
         else:
             # Load image
-            img, (h0, w0), (h, w) = load_image(self, index)
+            img, (h0, w0), (h, w) = load_image(self, img_lst_path)
 
             # Letterbox
-            shape = self.batch_shapes[self.batch[index]] if self.rect else self.img_size  # final letterboxed shape
+            shape = self.batch_shapes[self.batch[index]] if self.rect else self.image_size  # final letterboxed shape
             img, ratio, pad = letterbox(img, shape, auto=False, scaleup=self.augment)
             shapes = (h0, w0), ((h / h0, w / w0), pad)  # for COCO mAP rescaling
 
@@ -263,44 +349,12 @@ class EfficientdetDataset(Dataset):
         tmp_targets = np.array(y, dtype=np.float32)
         return tmp_inp, tmp_targets
 
-# DataLoader中collate_fn使用
-def efficientdet_dataset_collate(batch):
-    images = []
-    bboxes = []
-    for img, box in batch:
-        images.append(img)
-        bboxes.append(box)
-    images = np.array(images)
-    bboxes = np.array(bboxes)
-    return images, bboxes
-
-def xyxy2xywh(x):
-    # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
-    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)  
-    y[:, 0] = x[:, 0]  # x center
-    y[:, 1] = x[:, 1]  # y center
-    y[:, 2] = x[:, 2] - x[:, 0]  # width
-    y[:, 3] = x[:, 3] - x[:, 1]  # height
-    return y
-
-def xywh2xyxy(x):
-    # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
-    y[:, 0] = x[:, 0]  # top left x
-    y[:, 1] = x[:, 1]  # top left y
-    y[:, 2] = x[:, 0] + x[:, 2]  # bottom right x
-    y[:, 3] = x[:, 1] + x[:, 3]  # bottom right y
-    return y
-
 # Ancillary functions --------------------------------------------------------------------------------------------------
-def load_image(self, index):
+def load_image(self, img_lst_path):
     # loads 1 image from dataset, returns img, original hw, resized hw
-    #path = self.img_files[index]
-    path = self.train_lines[index]
-    #lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
         
-    img = cv2.imread(path)  # BGR
-    assert img is not None, 'Image Not Found ' + path
+    img = cv2.imread(img_lst_path)  # BGR
+    assert img is not None, 'Image Not Found ' + img_lst_path
     h0, w0 = img.shape[:2]  # orig hw
     r = self.image_size[0] / max(h0, w0)  # resize image to img_size
     if r != 1:  # always resize down, only resize up if training with augmentation
@@ -310,14 +364,16 @@ def load_image(self, index):
 
 def load_mosaic(self, index):
     # loads images in a 4-mosaic
+    img_lst_path = self.img_files[index]
+    lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
 
     labels4 = []
-    s = self.img_size
+    s = self.image_size[0]
     yc, xc = [int(random.uniform(-x, 2 * s + x)) for x in self.mosaic_border]  # mosaic center x, y
     indices = [index] + [self.indices[random.randint(0, self.n - 1)] for _ in range(3)]  # 3 additional image indices
     for i, index in enumerate(indices):
         # Load image
-        img, _, (h, w) = load_image(self, index)
+        img, _, (h, w) = load_image(self, img_lst_path)
 
         # place img in img4
         if i == 0:  # top left
@@ -339,8 +395,8 @@ def load_mosaic(self, index):
         padh = y1a - y1b
 
         # Labels
-        img_lst_path = self.train_lines[index]
-        lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
+        #img_lst_path = self.train_lines[index]
+        #lbl_lst_path = img_lst_path.replace('images', 'labels').replace('.' + img_lst_path.split('.')[-1], '.txt')
         #x = self.labels[index]
         with open(lbl_lst_path,'r') as f:
             Bboxes = f.read().strip().splitlines()
@@ -348,10 +404,10 @@ def load_mosaic(self, index):
             
         labels = x.copy()
         if x.size > 0:  # Normalized xywh to pixel xyxy format
-            labels[:, 1] = w * (x[:, 1] - x[:, 3] / 2) + padw
-            labels[:, 2] = h * (x[:, 2] - x[:, 4] / 2) + padh
-            labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + padw
-            labels[:, 4] = h * (x[:, 2] + x[:, 4] / 2) + padh
+            labels[:, 1] = w * x[:, 1] + padw
+            labels[:, 2] = h * x[:, 2] + padh
+            labels[:, 3] = w * (x[:, 1] + x[:, 3]) + padw
+            labels[:, 4] = h * (x[:, 2] + x[:, 4]) + padh
         labels4.append(labels)
 
     # Concat/clip labels
@@ -370,6 +426,35 @@ def load_mosaic(self, index):
                                        border=self.mosaic_border)  # border to remove
 
     return img4, labels4
+
+# DataLoader中collate_fn使用
+def efficientdet_dataset_collate(batch):
+    images = []
+    bboxes = []
+    for img, box in batch:
+        images.append(img)
+        bboxes.append(box)
+    images = np.array(images)
+    bboxes = np.array(bboxes)
+    return images, bboxes
+
+def xyxy2xywh(x):
+    # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
+    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)  
+    y[:, 0] = (x[:, 0] + x[:, 2]) / 2  # x center
+    y[:, 1] = (x[:, 1] + x[:, 3]) / 2  # y center
+    y[:, 2] = x[:, 2] - x[:, 0]  # width
+    y[:, 3] = x[:, 3] - x[:, 1]  # height
+    return y
+
+def xywh2xyxy(x):
+    # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
+    y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
+    y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
+    y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    return y
 
 def box_candidates(box1, box2, wh_thr=2, ar_thr=20, area_thr=0.1, eps=1e-16):  # box1(4,n), box2(4,n)
     # Compute candidate boxes: box1 before augment, box2 after augment, wh_thr (pixels), aspect_ratio_thr, area_ratio
@@ -495,3 +580,17 @@ def letterbox(img, new_shape=(512, 512), color=(114, 114, 114), auto=True, scale
     left, right = int(round(dw - 0.1)), int(round(dw + 0.1))
     img = cv2.copyMakeBorder(img, top, bottom, left, right, cv2.BORDER_CONSTANT, value=color)  # add border
     return img, ratio, (dw, dh)
+
+def augment_hsv(img, hgain=0.5, sgain=0.5, vgain=0.5):
+    r = np.random.uniform(-1, 1, 3) * [hgain, sgain, vgain] + 1  # random gains
+    hue, sat, val = cv2.split(cv2.cvtColor(img, cv2.COLOR_BGR2HSV))
+    dtype = img.dtype  # uint8
+
+    x = np.arange(0, 256, dtype=np.int16)
+    lut_hue = ((x * r[0]) % 180).astype(dtype)
+    lut_sat = np.clip(x * r[1], 0, 255).astype(dtype)
+    lut_val = np.clip(x * r[2], 0, 255).astype(dtype)
+
+    img_hsv = cv2.merge((cv2.LUT(hue, lut_hue), cv2.LUT(sat, lut_sat), cv2.LUT(val, lut_val))).astype(dtype)
+    cv2.cvtColor(img_hsv, cv2.COLOR_HSV2BGR, dst=img)  # no return needed
+

@@ -51,8 +51,8 @@ class EfficientDet(object):
         "model_path"    : './logs/last.pth',
         "classes_path"  : 'model_data/classes.txt',
         "phi"           : 0,
-        "confidence"    : 0.15,
-        "iou"           : 0.15,
+        "confidence"    : 0.01,
+        "iou"           : 0.01,
         "cuda"          : True
     }
 

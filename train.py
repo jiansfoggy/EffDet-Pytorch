@@ -2,7 +2,7 @@
 #       对数据集进行训练
 #-------------------------------------#
 import os
-import time
+import time, yaml
 
 import numpy as np
 from tqdm import tqdm
@@ -57,7 +57,8 @@ def fit_one_epoch(net,focal_loss,epoch,epoch_size,epoch_size_val,gen,genval,Epoc
                     images = Variable(torch.from_numpy(images).type(torch.FloatTensor))
                     targets = [Variable(torch.from_numpy(ann).type(torch.FloatTensor)) for ann in targets]
 
-            optimizer.zero_grad()
+            #optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             _, regression, classification, anchors = net(images)
             loss, c_loss, r_loss = focal_loss(classification, regression, anchors, targets, cuda=cuda)
             loss.backward()
@@ -90,7 +91,8 @@ def fit_one_epoch(net,focal_loss,epoch,epoch_size,epoch_size_val,gen,genval,Epoc
                 else:
                     images_val = Variable(torch.from_numpy(images_val).type(torch.FloatTensor))
                     targets_val = [Variable(torch.from_numpy(ann).type(torch.FloatTensor)) for ann in targets_val]
-                optimizer.zero_grad()
+                optimizer.zero_grad(set_to_none=True)
+                #optimizer.zero_grad()
                 _, regression, classification, anchors = net(images_val)
                 loss, c_loss, r_loss = focal_loss(classification, regression, anchors, targets_val, cuda=cuda)
                 val_loss += loss.item()
@@ -200,7 +202,13 @@ if __name__ == "__main__":
     
     #num_val = int(len(lines)*val_split)
     #num_train = len(lines) - num_val
-    
+    with open("./model_data/hyp.scratch.yaml") as f:
+        hyp = yaml.load(f, Loader=yaml.FullLoader)  # load hyps
+        if 'box' not in hyp:
+            warn('Compatibility: %s missing "box" which was renamed from "giou" in %s' %
+                 (hyp, 'https://github.com/ultralytics/yolov5/pull/1120'))
+            hyp['box'] = hyp.pop('giou')
+ 
     #------------------------------------------------------#
     #   主干特征提取网络特征通用，冻结训练可以加快训练速度
     #   也可以在训练初期防止权值被破坏。
@@ -221,8 +229,8 @@ if __name__ == "__main__":
         optimizer = optim.Adam(net.parameters(),lr,weight_decay=5e-4)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
         
-        train_dataset = EfficientdetDataset(trn_path, (input_shape[0], input_shape[1]), is_train=True)
-        val_dataset = EfficientdetDataset(vld_path, (input_shape[0], input_shape[1]), is_train=False)
+        train_dataset = EfficientdetDataset(trn_path, (input_shape[0], input_shape[1]), is_train=True, hyp=hyp, batch_size=Batch_size)
+        val_dataset = EfficientdetDataset(vld_path, (input_shape[0], input_shape[1]), is_train=False, hyp=hyp, batch_size=Batch_size)
 
         #train_dataset = EfficientdetDataset(lines[:num_train], (input_shape[0], input_shape[1]), is_train=True)
         #val_dataset = EfficientdetDataset(lines[num_train:], (input_shape[0], input_shape[1]), is_train=False)
@@ -247,7 +255,7 @@ if __name__ == "__main__":
         #--------------------------------------------#
         #   BATCH_SIZE不要太小，不然训练效果很差
         #--------------------------------------------#
-        lr = 1e-6
+        lr = 1e-5
         Batch_size = 8
         Freeze_Epoch = 30
         Unfreeze_Epoch = 80
@@ -255,8 +263,8 @@ if __name__ == "__main__":
         optimizer = optim.Adam(net.parameters(),lr,weight_decay=5e-4)
         lr_scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=2, verbose=True)
   
-        train_dataset = EfficientdetDataset(trn_path, (input_shape[0], input_shape[1]), is_train=True)
-        val_dataset = EfficientdetDataset(vld_path, (input_shape[0], input_shape[1]), is_train=False)
+        train_dataset = EfficientdetDataset(trn_path, (input_shape[0], input_shape[1]), is_train=True, hyp=hyp, batch_size=Batch_size)
+        val_dataset = EfficientdetDataset(vld_path, (input_shape[0], input_shape[1]), is_train=False, hyp=hyp, batch_size=Batch_size)
 
         #train_dataset = EfficientdetDataset(lines[:num_train], (input_shape[0], input_shape[1]), is_train=True)
         #val_dataset = EfficientdetDataset(lines[num_train:], (input_shape[0], input_shape[1]), is_train=False)

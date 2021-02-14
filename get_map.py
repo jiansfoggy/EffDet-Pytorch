@@ -13,7 +13,7 @@ import numpy as np
 #   用于计算mAP
 #   代码克隆自https://github.com/Cartucho/mAP
 #----------------------------------------------------#
-MINOVERLAP = 0.5 # default value (defined in the PASCAL VOC2012 challenge)
+MINOVERLAP = 0.05 # default value (defined in the PASCAL VOC2012 challenge)
 
 parser = argparse.ArgumentParser()
 parser.add_argument('-na', '--no-animation', help="no animation is shown.", action="store_true")
@@ -197,8 +197,6 @@ def voc_ap(rec, prec):
     for i in i_list:
         ap += ((mrec[i]-mrec[i-1])*mpre[i])
     return ap, mrec, mpre
-
-
 """
  Convert the lines of a file to a list
 """
@@ -525,7 +523,7 @@ gt_classes = list(gt_counter_per_class.keys())
 gt_classes = sorted(gt_classes)
 n_classes = len(gt_classes)
 print(gt_classes)
-#print(gt_counter_per_class)
+print(gt_counter_per_class)
 
 """
  Check format of the flag --set-class-iou (if used)
@@ -785,7 +783,7 @@ with open(results_files_path + "/results.txt", 'w') as results_file:
             prec[idx] = float(tp[idx]) / (fp[idx] + tp[idx])
         #print(prec)
         ap, mrec, mprec = voc_ap(rec[:], prec[:])
-        F1 = np.array(rec)*np.array(prec)/(np.array(prec)+np.array(rec))*2
+        F1 = 2*np.array(rec)*np.array(prec)/(np.array(prec)+np.array(rec))
 
         sum_AP += ap
         text = "{0:.2f}%".format(ap*100) + " = " + class_name + " AP " #class_name + " AP = {0:.2f}%".format(ap*100)
@@ -814,7 +812,7 @@ with open(results_files_path + "/results.txt", 'w') as results_file:
         lamr_dictionary[class_name] = lamr
 
         """
-         Draw plot
+        Draw plot
         """
         if draw_plot:
             plt.plot(rec, prec, '-o')
